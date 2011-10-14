@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cstdarg>
 #include <cerrno>
+#include <ctime>
 #include <stdexcept>
 #include <string>
 #include <deque>
@@ -14,13 +15,14 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <poll.h>
 #include <unistd.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/Xrandr.h>
 
-#define VERSION "0.5"
+#define VERSION "0.6"
 
 #define SCRIPT_FILENAME "event.sh"
 #define PID_FILENAME "xrr-events.pid"
@@ -28,6 +30,8 @@
 #define PID_STR_LENGTH 20
 #define LINEBUF_SIZE 2048
 #define XERRBUF_SIZE 1024
+//"YYYY-MM-DD/HH:MM:SS\0"
+#define TIMEBUF_SIZE 20
 #define LOG_LEVEL_ALL 0
 #define LOG_LEVEL_DEBUG 1
 #define LOG_LEVEL_INFO 2
@@ -146,10 +150,15 @@ const char *log_level_to_string(int n) {
 void vlog(unsigned char level, const char *filename,
         const char *function, unsigned int lineno,
         const char *fmt, va_list args) {
-    //TODO
-    //YYYY-MM-DD/HH:MM:SS
-    //char timebuf[20];
-    //strftime(timebuf, 20, "",
+    struct timeval tv;
+    struct tm tm;
+
+    gettimeofday(&tv, NULL);
+    if (localtime_r(&tv.tv_sec, &tm)) {
+        char timebuf[TIMEBUF_SIZE];
+        strftime(timebuf, TIMEBUF_SIZE, "%Y-%m-%d/%H:%M:%S", &tm);
+        printf("[%s]", timebuf);
+    }
     printf("[%s:%s:%d/%s] ", filename, function, lineno, log_level_to_string(level));
     vfprintf(stdout, fmt, args);
 }
