@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <deque>
+#include <set>
 #include <getopt.h>
 #include <signal.h>
 #include <sys/types.h>
@@ -19,7 +20,7 @@
 #include <X11/Xutil.h>
 #include <X11/extensions/Xrandr.h>
 
-#define VERSION "0.2"
+#define VERSION "0.3"
 
 #define SCRIPT_FILENAME "event.sh"
 #define PID_FILENAME "xrr-events.pid"
@@ -450,6 +451,11 @@ class Application {/*{{{*/
         int xrr_error_base;
         int xrr_major_ver;
         int xrr_minor_ver;
+        //for polling
+        struct pollfd *x_poll_fds;
+        typedef std::set<int> FileDescriptorSet;
+        FileDescriptorSet x_fds;
+        bool fdset_requires_rebuild;
 
         bool skip_next_event;
         bool quit_app;
@@ -468,6 +474,7 @@ class Application {/*{{{*/
             : display(NULL), resources(NULL),
             xrr_event_base(0), xrr_error_base(0),
             xrr_major_ver(0), xrr_minor_ver(0),
+            x_poll_fds(NULL), x_fds(), fdset_requires_rebuild(false),
             skip_next_event(false), quit_app(false), paths(paths),
             daemonize(false), do_kill(false), do_replace(false)
         {
@@ -754,13 +761,43 @@ class Application {/*{{{*/
             return mainloop();
         }
 
+        void init_x_fds(void) {
+            x_fds.insert(XConnectionNumber(display));
+            fdset_requires_rebuild = true;
+            build_pollfds();
+        }
+
+        /**
+         * Builds new pollfd's using the values in x_fds
+         */
+        void build_pollfds(void) {
+            if (!fdset_requires_rebuild)
+                return;
+
+            size_t n_fds = x_fds.size();
+            if (!n_fds) {
+                log_error("No fds in set");
+                return;
+            }
+
+            struct pollfd *fds = new struct pollfd[n_fds];
+
+            FileDescriptorSet::const_iterator end = x_fds.end();
+            int i=0;
+            for (FileDescriptorSet::const_iterator fd=x_fds.begin(); fd != end; ++fd, ++i) {
+                fds[i].fd = *fd;
+                fds[i].events = POLLIN;
+            }
+
+            if (x_poll_fds)
+                delete[] x_poll_fds;
+            x_poll_fds = fds;
+        }
+
         int mainloop(void) {
             XEvent ev;
             log_debug("Entering mainloop");
-
-            struct pollfd fds[1];
-            fds->fd = XConnectionNumber(display);
-            fds->events = POLLIN;
+            init_x_fds();
 
             while (!quit_app) {
                 //check if we have any pending events, if so, process them
@@ -791,7 +828,10 @@ class Application {/*{{{*/
                 XFlush(display);
 
                 log_debug("Running poll()");
-                if (poll(fds, 1, -1) < 0) {
+
+                //if any new fds have been added by XConnectionWatchProc, rebuild
+                build_pollfds();
+                if (poll(x_poll_fds, 1, -1) < 0) {
                     if (errno == EINTR) {
                         log_debug("poll interrupted by signal");
                         continue;
@@ -799,8 +839,15 @@ class Application {/*{{{*/
                     log_error_unix("poll() failed");
                     break;
                 }
-                XProcessInternalConnection(display, fds[0].fd);
+
                 log_debug("Poll returned");
+
+                //let X do its thing
+                size_t n_fds=x_fds.size();
+                for (size_t i=0; i < n_fds; ++i) {
+                    if (x_poll_fds[i].revents)
+                        XProcessInternalConnection(display, x_poll_fds[i].fd);
+                }
             }
             return 0;
         }
@@ -870,14 +917,17 @@ class Application {/*{{{*/
         }
 
         /* callbacks */
-        //TODO fix this
+        //XXX untested
         void x_connection_added(int fd, Bool opening) {
             if (opening) {
                 log_debug("Adding new fd %d\n", fd);
+                x_fds.insert(fd);
             }
             else {
                 log_debug("Removing fd %d\n", fd);
+                x_fds.erase(fd);
             }
+            fdset_requires_rebuild = true;
         }
 
         /* static wrappers for callback functions */
