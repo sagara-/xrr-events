@@ -22,7 +22,7 @@
 #include <X11/Xutil.h>
 #include <X11/extensions/Xrandr.h>
 
-#define VERSION "0.6"
+#define VERSION "0.6.1"
 
 #define SCRIPT_FILENAME "event.sh"
 #define PID_FILENAME "xrr-events.pid"
@@ -166,9 +166,8 @@ void vlog(unsigned char level, const char *filename,
 void log(unsigned char level, const char *filename,
         const char *function, unsigned int lineno,
         const char *fmt, ...) {
-    if (level < show_log_level) {
+    if (level < show_log_level)
         return;
-    }
     va_list args;
     va_start(args, fmt);
     vlog(level, filename, function, lineno, fmt, args);
@@ -207,7 +206,7 @@ static void usage(void) {
     printf("xrr-events [options]\n"
            "\t--replace : Kill current instance and replace it\n"
            "\t--kill : Kill current instance and exit\n"
-           "\t--log-level=LEVEL : Only output messages greater than the given log level\n"
+           "\t--log-level=LEVEL : Only output messages greater or equal than the given log level (1=debug, 2=info, 3=error)\n"
            "\t--script-file=FILENAME : Use the given file as the event script\n"
            "\t--daemonize : Run in background\n"
            "\t--version : Print version and exit\n"
