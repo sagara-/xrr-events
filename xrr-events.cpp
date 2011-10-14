@@ -1,5 +1,4 @@
 //compile with: g++ xrr-events.cpp -oxrr-events -Wall -Weffc++ -lX11 -lXrandr
-//TODO load options from a config file
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -20,12 +19,13 @@
 #include <X11/Xutil.h>
 #include <X11/extensions/Xrandr.h>
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 
 #define SCRIPT_FILENAME "event.sh"
 #define PID_FILENAME "xrr-events.pid"
 //includes trailing \0
 #define PID_STR_LENGTH 20
+#define LINEBUF_SIZE 2048
 #define LOG_LEVEL_ALL 0
 #define LOG_LEVEL_DEBUG 1
 #define LOG_LEVEL_INFO 2
@@ -38,6 +38,52 @@ void handle_signal(int signo);
 Application *app_for_sighandler = NULL;
 
 typedef std::deque<std::string> Args;
+
+bool split_line(char *linebuf, std::string &k, std::string &v, bool &arg_provided) {
+    size_t l = strlen(linebuf);
+
+    if (!l)
+        return false;
+
+    if (linebuf[0] == '#')
+        return false;
+
+    char *assign_pos = strchr(linebuf, '=');
+    if (!assign_pos) {
+        k.assign(linebuf, l-1);
+        arg_provided = false;
+        return true;
+    }
+
+    size_t k_len = assign_pos-linebuf;
+
+    //strip whitespace
+    char *tmp = assign_pos-1;
+    while (tmp != linebuf) {
+        if (*tmp == ' ' || *tmp == '\t') {
+            --k_len;
+            --tmp;
+        }
+        else
+            break;
+    }
+    k.assign(linebuf, k_len);
+
+    //strip whitespace
+    tmp = assign_pos+1;
+    while (*tmp != '\0') {
+        if (*tmp != ' ' && *tmp != '\t')
+            break;
+        ++assign_pos;
+        ++tmp;
+    }
+    size_t v_len = &linebuf[l-2]-assign_pos;
+
+    //ignore \n as well
+    v.assign(assign_pos+1, v_len);
+    arg_provided = true;
+    return true;
+}
 
 bool makedirs(const std::string &path, mode_t mode=0744) {
     std::string path_copy(path);
@@ -159,6 +205,7 @@ struct ApplicationPaths {/*{{{*/
     std::string cache_dir;
     std::string log_dir;
 
+    std::string config_file_path;
     std::string pid_file_path;
     std::string log_path;
     std::string err_log_path;
@@ -166,8 +213,8 @@ struct ApplicationPaths {/*{{{*/
 
     ApplicationPaths(AppUserModeType mode) :
         toplevel_dir(), cache_dir(), log_dir(),
-        pid_file_path(), log_path(), err_log_path(),
-        script_path()
+        config_file_path(), pid_file_path(), log_path(),
+        err_log_path(), script_path()
     {
         if (mode == UserMode) {
             char *home_dir = getenv("HOME");
@@ -187,6 +234,7 @@ struct ApplicationPaths {/*{{{*/
         else
             throw std::runtime_error("Invalid run mode given");
 
+        config_file_path = path_join(toplevel_dir, "xrr-events.conf");
         pid_file_path = path_join(cache_dir, PID_FILENAME);
         script_path = path_join(toplevel_dir, SCRIPT_FILENAME);
         log_path = path_join(log_dir, "stdout.log");
@@ -305,6 +353,7 @@ class PidFile {/*{{{*/
             if (stat(path, &kiyoka) < 0) {
                 if (errno == ENOENT) {
                     remove_file();
+                    log_info("Not running");
                     return false;
                 }
                 log_error_unix("Unable to stat() %s", path);
@@ -494,8 +543,82 @@ class Application {/*{{{*/
             return true;
         }
 
+        /*** Option handling ***/
+
+        void set_loglevel_opt(const std::string &arg) {
+            errno = 0;
+            show_log_level = strtol(arg.c_str(), NULL, 10);
+            if (errno != 0) {
+                log_error_unix("Unable to convert %s to an int", optarg);
+                show_log_level = 0;
+            }
+        }
+
+        void set_daemonize_opt(void) {
+            daemonize = true;
+        }
+
+        void set_kill_opt(void) {
+            do_kill = true;
+        }
+
+        void set_replace_opt(void) {
+            do_replace = true;
+        }
+
+        void set_scriptfile_opt(const std::string &arg) {
+            paths.script_path = arg;
+        }
+
         /**
-         * Note: may set global logfile variable, may call exit
+         * Reads configuration info from a config file
+         */
+        void read_config_file(void) {
+            FILE *fd;
+            const char *path = paths.config_file_path.c_str();
+            char linebuf[LINEBUF_SIZE];
+            if (!(fd = fopen(path, "rb"))) {
+                if (errno == ENOENT) {
+                    log_info("No config file found");
+                }
+                else {
+                    log_error_unix("Unable to open config file (%s)", path);
+                }
+                return;
+            }
+            log_info("Reading config file");
+
+            errno = 0;
+            while (fgets(linebuf, LINEBUF_SIZE, fd) != NULL) {
+                std::string k;
+                std::string v;
+                bool arg_provided;
+
+                if (!split_line(linebuf, k, v, arg_provided))
+                    continue;
+                set_opt(k, v, arg_provided);
+            }
+            if (errno)
+                log_error_unix("Failed to read line");
+
+            fclose(fd);
+        }
+
+        void set_opt(const std::string &k, const std::string &v, bool arg_provided) {
+            if (k == "daemonize")
+                set_daemonize_opt();
+            else if (k == "script-file" && arg_provided)
+                set_scriptfile_opt(v);
+            else if (k == "log-level" && arg_provided)
+                set_loglevel_opt(v);
+            else if (k == "kill")
+                set_kill_opt();
+            else if (k == "replace")
+                set_replace_opt();
+        }
+
+        /**
+         * Note: may call exit
          */
         void parse_args(int argc, char **argv) {
             struct option opts[] = {
@@ -514,35 +637,30 @@ class Application {/*{{{*/
             while ((c = getopt_long_only(argc, argv, optstr, opts, NULL)) != -1) {
                 switch (c) {
                     case 'r':
-                        do_replace = true;
+                        set_replace_opt();
                         break;
                     case 'k':
-                        do_kill = true;
+                        set_kill_opt();
                         break;
                     case 'l':
-                        errno = 0;
-                        show_log_level = strtol(optarg, NULL, 10);
-                        if (errno != 0) {
-                            log_error_unix("Unable to convert %s to an int", optarg);
-                            show_log_level = 0;
-                        }
+                        set_loglevel_opt(optarg);
                         break;
                     case 's':
-                        paths.script_path = optarg;
+                        set_scriptfile_opt(optarg);
                         break;
                     case 'd':
-                        daemonize = true;
+                        set_daemonize_opt();
                         break;
                     case 'h':
                         usage();
                         exit(0);
                         break;
                     case 'v':
-                        printf("xrr-events %s\n", VERSION);
+                        log_info("xrr-events %s", VERSION);
                         exit(0);
                         break;
                     default:
-                        printf("unknown\n");
+                        log_error("Unknown option");
                         break;
                 }
             }
@@ -787,6 +905,7 @@ int main(int argc, char **argv) {
 
     Application app(paths);
 
+    app.read_config_file();
     app.parse_args(argc, argv);
 
     if (!app.init()) {
