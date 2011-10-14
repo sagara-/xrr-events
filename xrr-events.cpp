@@ -1,5 +1,4 @@
 //compile with: g++ xrr-events.cpp -oxrr-events -Wall -Weffc++ -lX11 -lXrandr
-//TODO X error handler
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -21,13 +20,14 @@
 #include <X11/Xutil.h>
 #include <X11/extensions/Xrandr.h>
 
-#define VERSION "0.4"
+#define VERSION "0.5"
 
 #define SCRIPT_FILENAME "event.sh"
 #define PID_FILENAME "xrr-events.pid"
 //includes trailing \0
 #define PID_STR_LENGTH 20
 #define LINEBUF_SIZE 2048
+#define XERRBUF_SIZE 1024
 #define LOG_LEVEL_ALL 0
 #define LOG_LEVEL_DEBUG 1
 #define LOG_LEVEL_INFO 2
@@ -36,7 +36,6 @@
 #define NO_MODE_NAME "None"
 
 class Application;
-void handle_signal(int signo);
 
 //can't pass user data to a signal
 Application *app_for_sighandler = NULL;
@@ -523,6 +522,9 @@ class Application {/*{{{*/
                 return false;
             }
 
+            XSetErrorHandler(Application::x_error);
+            XSetIOErrorHandler(Application::x_io_error);
+
             if (!XRRQueryExtension(display, &xrr_event_base, &xrr_error_base)) {
                 log_error("XRRQueryExtension");
                 return false;
@@ -550,8 +552,8 @@ class Application {/*{{{*/
 
             //setup signal handling stuff
             app_for_sighandler = this;
-            signal(SIGINT, ::handle_signal);
-            signal(SIGTERM, ::handle_signal);
+            signal(SIGINT, Application::static_handle_signal);
+            signal(SIGTERM, Application::static_handle_signal);
 
             return true;
         }
@@ -957,16 +959,27 @@ class Application {/*{{{*/
             Application *app = (Application *)user_data;
             app->x_connection_added(fd, opening);
         }
-};/*}}}*/
 
-/**
- * Call the registered Application's signal handler
- */
-void handle_signal(int signo) {
-    if (!app_for_sighandler)
-        return;
-    app_for_sighandler->handle_signal(signo);
-}
+        static void static_handle_signal(int signo) {
+            if (!app_for_sighandler)
+                return;
+            app_for_sighandler->handle_signal(signo);
+        }
+
+        static int x_io_error(Display *display) {
+            log_error("X IO error, aborting");
+            abort();
+            return 0;
+        }
+
+        static int x_error(Display *display, XErrorEvent *ev) {
+            unsigned int err = ev->error_code;
+            char error_str[XERRBUF_SIZE] = "";
+            XGetErrorText(display, err, error_str, XERRBUF_SIZE-1);
+            log_error("X Error: %s", error_str);
+            return 0;
+        }
+};/*}}}*/
 
 int main(int argc, char **argv) {
     ApplicationPaths paths(UserMode);
