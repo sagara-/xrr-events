@@ -1,4 +1,5 @@
 //compile with: g++ xrr-events.cpp -oxrr-events -Wall -Weffc++ -lX11 -lXrandr
+//TODO X error handler
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -20,7 +21,7 @@
 #include <X11/Xutil.h>
 #include <X11/extensions/Xrandr.h>
 
-#define VERSION "0.3"
+#define VERSION "0.4"
 
 #define SCRIPT_FILENAME "event.sh"
 #define PID_FILENAME "xrr-events.pid"
@@ -31,6 +32,8 @@
 #define LOG_LEVEL_DEBUG 1
 #define LOG_LEVEL_INFO 2
 #define LOG_LEVEL_ERROR 3
+#define UNKNOWN_MODE_NAME "Unknown"
+#define NO_MODE_NAME "None"
 
 class Application;
 void handle_signal(int signo);
@@ -40,6 +43,17 @@ Application *app_for_sighandler = NULL;
 
 typedef std::deque<std::string> Args;
 
+//don't free this
+XRRModeInfo *find_mode_by_xid(XRRScreenResources *res, RRMode mode) {
+    for (int i=0; i < res->nmode; ++i) {
+        XRRModeInfo *info = &res->modes[i];
+        if (info->id == mode)
+            return info;
+    }
+    return NULL;
+}
+
+//given a line from the config file, split it into a key and an optional value
 bool split_line(char *linebuf, std::string &k, std::string &v, bool &arg_provided) {
     size_t l = strlen(linebuf);
 
@@ -445,8 +459,8 @@ class Application {/*{{{*/
     private:
         //x11
         Display *display;
+        Window root_window;
         //xrr
-        XRRScreenResources *resources;
         int xrr_event_base;
         int xrr_error_base;
         int xrr_major_ver;
@@ -457,7 +471,6 @@ class Application {/*{{{*/
         FileDescriptorSet x_fds;
         bool fdset_requires_rebuild;
 
-        bool skip_next_event;
         bool quit_app;
         ApplicationPaths paths;
 
@@ -471,19 +484,17 @@ class Application {/*{{{*/
 
     public:
         Application(const ApplicationPaths &paths)
-            : display(NULL), resources(NULL),
+            : display(NULL), root_window(None),
             xrr_event_base(0), xrr_error_base(0),
             xrr_major_ver(0), xrr_minor_ver(0),
             x_poll_fds(NULL), x_fds(), fdset_requires_rebuild(false),
-            skip_next_event(false), quit_app(false), paths(paths),
+            quit_app(false), paths(paths),
             daemonize(false), do_kill(false), do_replace(false)
         {
             ;
         }
 
         ~Application(void) {
-            if (resources)
-                XRRFreeScreenResources(resources);
             if (display) {
                 XRemoveConnectionWatch(display,
                         Application::static_x_connection_added, (XPointer)this);
@@ -525,14 +536,9 @@ class Application {/*{{{*/
             log_info("XRandR version %d.%d", xrr_major_ver, xrr_minor_ver);
 
             int default_screen = XDefaultScreen(display);
-            Window root = XRootWindow(display, default_screen);
+            root_window = XRootWindow(display, default_screen);
 
-            if (!(resources = XRRGetScreenResources(display, root))) {
-                log_error("XRRGetScreenResources");
-                return false;
-            }
-
-            XRRSelectInput(display, root, RROutputChangeNotifyMask);
+            XRRSelectInput(display, root_window, RROutputChangeNotifyMask);
 
             //X can open other connections to the display, this lets us be
             //notified of them
@@ -808,12 +814,6 @@ class Application {/*{{{*/
 
                     XRRUpdateConfiguration(&ev);
 
-                    if (skip_next_event) {
-                        log_debug("Skipping event");
-                        skip_next_event = false;
-                        continue;
-                    }
-
                     switch (ev.type-xrr_event_base) {
                         case RRNotify:
                             handle_notify_event((XRRNotifyEvent *)&ev);
@@ -857,20 +857,43 @@ class Application {/*{{{*/
                 log_error("Received an unknown XRRNotifyEvent subtype: %d", ev->subtype);
                 return;
             }
-            //has .mode:RRMode for the currently set mode, or None
+
+            XRRScreenResources *resources;
+            if (!(resources = XRRGetScreenResources(display, root_window))) {
+                log_error("XRRGetScreenResources");
+                return;
+            }
+
             XRROutputChangeNotifyEvent *oev = (XRROutputChangeNotifyEvent *)ev;
             XRROutputInfo *output_info = XRRGetOutputInfo(display, resources, oev->output);
+
+            const char *mode_name;
+            if (oev->mode != None) {
+                XRRModeInfo *mode_info = NULL;
+
+                //we don't free this; it's taken care of by XRRFreeScreenResources
+                if (!(mode_info = find_mode_by_xid(resources, oev->mode))) {
+                    log_error("Mode info not found");
+                    mode_name = UNKNOWN_MODE_NAME;
+                }
+                else
+                    mode_name = mode_info->name;
+            }
+            else
+                mode_name = NO_MODE_NAME;
+
             const char *conn_state = connection_to_string(output_info->connection);
-            log_info("Output changed: name=%s; connection=%s",
-                    output_info->name, conn_state);
+            log_info("Output changed: name=%s; connection=%s; mode=%s",
+                    output_info->name, conn_state, mode_name);
             Args args;
             args.push_back(output_info->name);
             args.push_back(conn_state);
+            args.push_back(mode_name);
             run_script(args);
             XRRFreeOutputInfo(output_info);
+            XRRFreeScreenResources(resources);
         }
 
-        //TODO check if output has an associated mode (use XRROutputChangeNotifyEvent.mode)
         void run_script(Args args) {
             struct stat kiyoka;
 
@@ -901,8 +924,6 @@ class Application {/*{{{*/
                 if (status < 0)
                     log_error("Script failed; returned %d", status);
                 log_info("Script completed");
-                if (status > 0)
-                    skip_next_event = true;
             }
 
             else if (WIFSIGNALED(status)) {
