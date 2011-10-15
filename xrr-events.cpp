@@ -22,9 +22,9 @@
 #include <X11/Xutil.h>
 #include <X11/extensions/Xrandr.h>
 
-#define VERSION "0.6.1"
+#define VERSION "0.7"
 
-#define SCRIPT_FILENAME "event.sh"
+#define SCRIPT_FILENAME "event-handler"
 #define PID_FILENAME "xrr-events.pid"
 //includes trailing \0
 #define PID_STR_LENGTH 20
