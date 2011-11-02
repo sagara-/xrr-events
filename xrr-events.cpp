@@ -22,8 +22,9 @@
 #include <X11/Xutil.h>
 #include <X11/extensions/Xrandr.h>
 
-#define VERSION "0.7"
+#define VERSION "0.8"
 
+#define PROGRAM_NAME "xrr-events"
 #define SCRIPT_FILENAME "event-handler"
 #define PID_FILENAME "xrr-events.pid"
 //includes trailing \0
@@ -384,6 +385,34 @@ class PidFile {/*{{{*/
 
             if (!S_ISDIR(kiyoka.st_mode)) {
                 log_error("%s isn't a directory", path);
+                return false;
+            }
+
+            //make sure the running process is actually a fellow xrr-events
+            std::string cmdline_path = std::string(path)+"/cmdline";
+
+            FILE *fd;
+            if (!(fd = fopen(cmdline_path.c_str(), "rb"))) {
+                log_error_unix("Unable to open %s", cmdline_path.c_str());
+                return false;
+            }
+
+            char linebuf[LINEBUF_SIZE];
+            linebuf[LINEBUF_SIZE-1] = '\x00';
+
+            //argv delimited with \x00 (including a terminating byte)
+            if (!fgets(linebuf, LINEBUF_SIZE-1, fd)) {
+                log_error_unix("Unable read read %s", cmdline_path.c_str());
+                fclose(fd);
+                return false;
+            }
+
+            fclose(fd);
+
+            const char *base = basename(linebuf);
+
+            if (strlen(base) != strlen(PROGRAM_NAME) || strcmp(PROGRAM_NAME, base)) {
+                log_debug("Pid points to a different program, assuming original process is dead");
                 return false;
             }
 
