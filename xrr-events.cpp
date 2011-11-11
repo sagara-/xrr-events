@@ -22,7 +22,7 @@
 #include <X11/Xutil.h>
 #include <X11/extensions/Xrandr.h>
 
-#define VERSION "0.8"
+#define VERSION "0.8.1"
 
 #define PROGRAM_NAME "xrr-events"
 #define SCRIPT_FILENAME "event-handler"
@@ -134,7 +134,7 @@ bool makedirs(const std::string &path, mode_t mode=0744) {
 }
 
 /* logging stuff *//*{{{*/
-unsigned char show_log_level = LOG_LEVEL_ALL;
+unsigned char show_log_level = LOG_LEVEL_INFO;
 
 const char *log_level_to_string(int n) {
     switch (n) {
@@ -389,7 +389,7 @@ class PidFile {/*{{{*/
             }
 
             //make sure the running process is actually a fellow xrr-events
-            std::string cmdline_path = std::string(path)+"/cmdline";
+            std::string cmdline_path = std::string(path)+"/comm";
 
             FILE *fd;
             if (!(fd = fopen(cmdline_path.c_str(), "rb"))) {
@@ -398,9 +398,9 @@ class PidFile {/*{{{*/
             }
 
             char linebuf[LINEBUF_SIZE];
+            linebuf[0] = '\x00';
             linebuf[LINEBUF_SIZE-1] = '\x00';
 
-            //argv delimited with \x00 (including a terminating byte)
             if (!fgets(linebuf, LINEBUF_SIZE-1, fd)) {
                 log_error_unix("Unable read read %s", cmdline_path.c_str());
                 fclose(fd);
@@ -409,9 +409,21 @@ class PidFile {/*{{{*/
 
             fclose(fd);
 
-            const char *base = basename(linebuf);
+            size_t l = strlen(linebuf);
+            if (!l) {
+                log_error("Empty pid file");
+                return false;
+            }
 
-            if (strlen(base) != strlen(PROGRAM_NAME) || strcmp(PROGRAM_NAME, base)) {
+            //kill any trailing newlines
+            for (size_t i=l-1; i >= 0; --i) {
+                if (linebuf[i] == '\n' || linebuf[i] == '\r')
+                    linebuf[i] = '\x00';
+                else
+                    break;
+            }
+
+            if (strcmp(PROGRAM_NAME, linebuf)) {
                 log_debug("Pid points to a different program, assuming original process is dead");
                 return false;
             }
@@ -638,7 +650,7 @@ class Application {/*{{{*/
                 }
                 return;
             }
-            log_info("Reading config file");
+            log_debug("Reading config file");
 
             errno = 0;
             while (fgets(linebuf, LINEBUF_SIZE, fd) != NULL) {
