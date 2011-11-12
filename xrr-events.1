@@ -1,4 +1,4 @@
-.TH XRR-EVENTS 1 "November 11, 2011" "GNU" "xrr-events"
+.TH XRR-EVENTS 1 "November 12, 2011" "0.8.1" "xrr-events"
 .SH NAME
 xrr-events \- An lightweight XRandR event handler daemon
 .\"
@@ -62,11 +62,45 @@ Configuration file. Commandline options can be written here to avoid specifying 
 .\"
 .TP
 ~/.config/xrr-events/event-handler
-Default event handler location (override via \-\-script\-file option)
+Default event handler location (override via \-\-script\-file option). Any output will go to xrr-events' stdout/stderr.
 .\"
 .TP
 ~/.cache/xrr-events.pid
 PID file for the currently running copy.
+.\"
+.SH EXAMPLE
+The following is an example event-handler script:
+.nf
+
+#!/bin/bash
+
+if [ $# -lt 3 ]; then
+    echo "Wrong number of args: $#"
+    exit -1
+fi
+
+#the output name (eg: HDMI1, LVDS1, etc)
+output_name="$1"
+#either Connected or Disconnected
+connection_state="$2"
+#resolution as a string (eg: 1366x768), or None if output isn't currently enabled
+mode_name="$3"
+
+if [ ${output_name} != "HDMI1" ]; then
+    echo "Ignoring output: ${output_name}"
+    exit 0
+fi
+
+if [ ${connection_state} = "Connected" -a ${mode_name} == "None" ]; then
+    echo "Turning on output"
+    xrandr --output HDMI1 --auto --right-of LVDS1
+    #to set wallpaper for screen 2
+    nitrogen --restore
+elif [ ${connection_state} = "Disconnected" -a ${mode_name} != "None" ]; then
+    echo "Turning off output"
+    xrandr --output HDMI1 --off
+fi
+.fi
 .\"
 .SH AUTHOR
 Kevin Tardif <kiyoka@gmail.com>
