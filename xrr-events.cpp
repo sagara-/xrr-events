@@ -1,4 +1,4 @@
-//compile with: g++ xrr-events.cpp -oxrr-events -Wall -Weffc++ -lX11 -lXrandr
+/* See LICENSE file for copyright and license details. */
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -207,7 +207,7 @@ static void usage(void) {
     printf("xrr-events [options]\n"
            "\t--replace : Kill current instance and replace it\n"
            "\t--kill : Kill current instance and exit\n"
-           "\t--log-level=LEVEL : Only output messages greater or equal than the given log level (1=debug, 2=info, 3=error)\n"
+           "\t--log-level=LEVEL : Only output messages greater or equal than the given log level (1=debug, 2=info(default), 3=error)\n"
            "\t--script-file=FILENAME : Use the given file as the event script\n"
            "\t--daemonize : Run in background\n"
            "\t--version : Print version and exit\n"
