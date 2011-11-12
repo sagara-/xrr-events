@@ -1,0 +1,8 @@
+About:
+
+xrr-events provides a way to run an executable whenever an output is added, removed, or modified (for example, when the resolution changes). It's meant to be run as a user-level daemon.
+
+Usage:
+
+`xrr-events --daemonize` will start the process and fork into the background. `xrr-events --help` will list all available options.
+View the manpage for further details.

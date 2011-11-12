@@ -1,0 +1,72 @@
+.TH XRR-EVENTS 1 "November 11, 2011" "GNU" "xrr-events"
+.SH NAME
+xrr-events \- An lightweight XRandR event handler daemon
+.\"
+.SH SYNOPSIS
+.B xrr-events \--help
+.br
+.B xrr-events \--version
+.br
+.B xrr-events
+.RB [ \-\-daemonize ]
+.RB [ \-\-kill ]
+.RB [ \-\-replace ]
+.RB [ \-\-script\-filename = \c
+.IR FILENAME ]
+.RB [ \-\-log\-level = \c
+.IR LEVEL ]
+.\"
+.SH DESCRIPTION
+.B xrr-events
+is a user-level daemon that runs a user-provided executable every time an output (like a monitor) is added, removed, or changed (for example, when its resolution is modified).
+.\"
+.SH OPTIONS
+The following options are supported:
+.\"
+.TP
+.B \-\-help
+Show summary of options and exit.
+.\"
+.TP
+.B \-\-version
+Show version of program and exit.
+.\"
+.TP
+.B \-\-daemonize
+Fork into the background after initialization.
+.\"
+.TP
+.B \-\-kill
+Kill any running copy and exit.
+.\"
+.TP
+.B \-\-replace
+When used with \-\-kill, will replace the running process.
+.\"
+.TP
+\fB\-\-log\-level\fP[=\fILEVEL\fP]
+Only output messages greater or equal than the given log level (1=debug, 2=info(default), 3=error)..
+.\"
+.TP
+\fB\-\-script\-filename\fP[=\fIFILENAME\fP]
+Use the given file as the event script.
+.\"
+.SH FILES
+.TP
+~/.config/xrr-events
+Location of log files and configuration data
+.\"
+.TP
+~/.config/xrr-events/xrr-events.conf
+Configuration file. Commandline options can be written here to avoid specifying them. Format is `key=value` where an option takes a value (eg: script-file), and `key` where the option does not (eg: daemonize)
+.\"
+.TP
+~/.config/xrr-events/event-handler
+Default event handler location (override via \-\-script\-file option)
+.\"
+.TP
+~/.cache/xrr-events.pid
+PID file for the currently running copy.
+.\"
+.SH AUTHOR
+Kevin Tardif <kiyoka@gmail.com>
