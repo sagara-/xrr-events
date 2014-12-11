@@ -74,7 +74,7 @@ The following is an example event-handler script:
 
 #!/bin/bash
 
-if [ $# -lt 3 ]; then
+if [ $# -lt 4 ]; then
     echo "Wrong number of args: $#"
     exit -1
 fi
@@ -85,6 +85,8 @@ output_name="$1"
 connection_state="$2"
 #resolution as a string (eg: 1366x768), or None if output isn't currently enabled
 mode_name="$3"
+#one of: normal, left, right, inverted (see xrandr(1))
+rotation="$4"
 
 if [ ${output_name} != "HDMI1" ]; then
     echo "Ignoring output: ${output_name}"

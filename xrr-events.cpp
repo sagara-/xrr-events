@@ -203,6 +203,20 @@ const char *connection_to_string(Connection c) {
     return "??";
 }
 
+const char *rotation_to_string(Rotation rotation) {
+    //following the xrandr command's naming scheme
+    switch (rotation) {
+        case RR_Rotate_0: return "normal";
+        //left is counterclock-wise
+        case RR_Rotate_90: return "left";
+        case RR_Rotate_180: return "inverted";
+        //left is clock-wise
+        case RR_Rotate_270: return "right";
+    }
+
+    return "unknown";
+}
+
 static void usage(void) {
     printf("xrr-events [options]\n"
            "\t--replace : Kill current instance and replace it\n"
@@ -934,12 +948,15 @@ class Application {/*{{{*/
                 mode_name = NO_MODE_NAME;
 
             const char *conn_state = connection_to_string(output_info->connection);
-            log_info("Output changed: name=%s; connection=%s; mode=%s",
-                    output_info->name, conn_state, mode_name);
+            const char *rotation = rotation_to_string(oev->rotation);
+
+            log_info("Output changed: name=%s; connection=%s; mode=%s; rotation=%s",
+                    output_info->name, conn_state, mode_name, rotation);
             Args args;
             args.push_back(output_info->name);
             args.push_back(conn_state);
             args.push_back(mode_name);
+            args.push_back(rotation);
             run_script(args);
             XRRFreeOutputInfo(output_info);
             XRRFreeScreenResources(resources);
@@ -1046,5 +1063,5 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    app.run();
+    return app.run();
 }
