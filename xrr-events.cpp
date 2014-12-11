@@ -22,7 +22,7 @@
 #include <X11/Xutil.h>
 #include <X11/extensions/Xrandr.h>
 
-#define VERSION "0.8.1"
+#define VERSION "0.9.0"
 
 #define PROGRAM_NAME "xrr-events"
 #define SCRIPT_FILENAME "event-handler"
