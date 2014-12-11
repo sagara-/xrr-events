@@ -384,10 +384,10 @@ class PidFile {/*{{{*/
             char path[PID_STR_LENGTH+6];
             snprintf(path, 26, "/proc/%d", pid);
 
-            struct stat kiyoka;
+            struct stat finfo;
 
             errno = 0;
-            if (stat(path, &kiyoka) < 0) {
+            if (stat(path, &finfo) < 0) {
                 if (errno == ENOENT) {
                     remove_file();
                     log_info("Not running");
@@ -397,7 +397,7 @@ class PidFile {/*{{{*/
                 abort();
             }
 
-            if (!S_ISDIR(kiyoka.st_mode)) {
+            if (!S_ISDIR(finfo.st_mode)) {
                 log_error("%s isn't a directory", path);
                 return false;
             }
@@ -963,13 +963,13 @@ class Application {/*{{{*/
         }
 
         void run_script(Args args) {
-            struct stat kiyoka;
+            struct stat finfo;
 
-            if (stat(paths.script_path.c_str(), &kiyoka) < -1) {
-                log_error_unix("Unable to run stat(script)");
+            if (stat(paths.script_path.c_str(), &finfo) < -1) {
+                log_error_unix("Unable to stat() %s", paths.script_path.c_str());
                 return;
             }
-            if (!(kiyoka.st_mode & S_IXUSR)) {
+            if (!(finfo.st_mode & S_IXUSR)) {
                 log_error("Script isn't executable");
                 return;
             }
