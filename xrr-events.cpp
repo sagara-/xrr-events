@@ -430,7 +430,7 @@ class PidFile {/*{{{*/
             }
 
             //kill any trailing newlines
-            for (size_t i=l-1; i >= 0; --i) {
+            for (size_t i=l-1; i > 0; --i) {
                 if (linebuf[i] == '\n' || linebuf[i] == '\r')
                     linebuf[i] = '\x00';
                 else
