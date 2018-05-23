@@ -68,7 +68,7 @@ bool split_line(char *linebuf, std::string &k, std::string &v, bool &arg_provide
         return false;
 
     char *assign_pos = strchr(linebuf, '=');
-    if (!assign_pos) {
+    if (!assign_pos || assign_pos == linebuf) {
         k.assign(linebuf, l-1);
         arg_provided = false;
         return true;
